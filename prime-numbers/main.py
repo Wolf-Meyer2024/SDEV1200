@@ -1,7 +1,7 @@
 #
 # Name Wolfgang Meyer
 # Date 2-3-25
-# Rock, Paper, Scissors Game Programming Project
+# prime-numbers project
 # SDEV 1200
 #
 
