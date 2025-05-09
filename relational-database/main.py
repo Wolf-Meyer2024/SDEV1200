@@ -1,153 +1,146 @@
-#
-# Name Wolfgang Meyer
-# Date 5-4-25
-# Relational Database Programming Project
-# SDEV 1200
-#
-
-# Use comments liberally throughout the program.
-
-# Import the sqlite3 module to work with SQLite databases in Python
 import sqlite3
+import tkinter as tk
+from tkinter import ttk, messagebox
 
-# Function to create the database and required tables
-def create_database():
-    # Connect to (or create) the database file named 'student_info.db'
-    conn = sqlite3.connect('student_info.db')
-    
-    # Enable foreign key constraints for referential integrity
-    conn.execute("PRAGMA foreign_keys = ON")
-    
-    # Create a cursor object to execute SQL commands
-    c = conn.cursor()
+# ---------- Database Setup ----------
+DB_NAME = 'student_info.db'
 
-    # Create the Majors table if it doesn't already exist
-    c.execute('''CREATE TABLE IF NOT EXISTS Majors (
-                    MajorID INTEGER PRIMARY KEY,
-                    Name TEXT NOT NULL)''')
+def run_query(query, params=()):
+    with sqlite3.connect(DB_NAME) as conn:
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA foreign_keys = ON")
+        cursor.execute(query, params)
+        conn.commit()
+        return cursor
 
-    # Create the Departments table if it doesn't already exist
-    c.execute('''CREATE TABLE IF NOT EXISTS Departments (
-                    DeptID INTEGER PRIMARY KEY,
-                    Name TEXT NOT NULL)''')
+# ---------- GUI ----------
+class StudentDatabaseApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Student Info Management System")
+        self.root.geometry("700x500")
 
-    # Create the Students table with foreign keys to Majors and Departments
-    c.execute('''CREATE TABLE IF NOT EXISTS Students (
-                    StudentID INTEGER PRIMARY KEY,
-                    Name TEXT NOT NULL,
-                    MajorID INTEGER,
-                    DeptID INTEGER,
-                    FOREIGN KEY (MajorID) REFERENCES Majors(MajorID),
-                    FOREIGN KEY (DeptID) REFERENCES Departments(DeptID))''')
+        tab_control = ttk.Notebook(root)
+        self.student_tab = ttk.Frame(tab_control)
+        self.major_tab = ttk.Frame(tab_control)
+        self.dept_tab = ttk.Frame(tab_control)
 
-    # Save changes and close the database connection
-    conn.commit()
-    conn.close()
+        tab_control.add(self.student_tab, text='Students')
+        tab_control.add(self.major_tab, text='Majors')
+        tab_control.add(self.dept_tab, text='Departments')
+        tab_control.pack(expand=1, fill='both')
 
-# Call the function to set up the database and tables
-create_database()
+        self.build_student_tab()
+        self.build_major_tab()
+        self.build_department_tab()
+
+    def build_student_tab(self):
+        frame = self.student_tab
+
+        ttk.Label(frame, text="Name").grid(row=0, column=0)
+        self.student_name = ttk.Entry(frame)
+        self.student_name.grid(row=0, column=1)
+
+        ttk.Label(frame, text="MajorID").grid(row=1, column=0)
+        self.student_major = ttk.Entry(frame)
+        self.student_major.grid(row=1, column=1)
+
+        ttk.Label(frame, text="DeptID").grid(row=2, column=0)
+        self.student_dept = ttk.Entry(frame)
+        self.student_dept.grid(row=2, column=1)
+
+        ttk.Button(frame, text="Add Student", command=self.add_student).grid(row=3, column=0, columnspan=2, pady=5)
+        self.student_tree = self.create_treeview(frame, ["ID", "Name", "MajorID", "DeptID"], 5)
+        self.refresh_students()
+
+    def add_student(self):
+        name = self.student_name.get()
+        major_id = self.student_major.get()
+        dept_id = self.student_dept.get()
+        if name and major_id and dept_id:
+            try:
+                run_query("INSERT INTO Students (Name, MajorID, DeptID) VALUES (?, ?, ?)",
+                          (name, int(major_id), int(dept_id)))
+                self.refresh_students()
+                messagebox.showinfo("Success", "Student added!")
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
+        else:
+            messagebox.showwarning("Missing Data", "Please fill out all fields.")
+
+    def refresh_students(self):
+        for i in self.student_tree.get_children():
+            self.student_tree.delete(i)
+        rows = run_query("SELECT * FROM Students").fetchall()
+        for row in rows:
+            self.student_tree.insert('', 'end', values=row)
+
+    def build_major_tab(self):
+        frame = self.major_tab
+
+        ttk.Label(frame, text="Major Name").grid(row=0, column=0)
+        self.major_name = ttk.Entry(frame)
+        self.major_name.grid(row=0, column=1)
+
+        ttk.Button(frame, text="Add Major", command=self.add_major).grid(row=1, column=0, columnspan=2)
+        self.major_tree = self.create_treeview(frame, ["ID", "Name"], 2)
+        self.refresh_majors()
+
+    def add_major(self):
+        name = self.major_name.get()
+        if name:
+            try:
+                run_query("INSERT INTO Majors (Name) VALUES (?)", (name,))
+                self.refresh_majors()
+                messagebox.showinfo("Success", "Major added!")
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
+
+    def refresh_majors(self):
+        for i in self.major_tree.get_children():
+            self.major_tree.delete(i)
+        rows = run_query("SELECT * FROM Majors").fetchall()
+        for row in rows:
+            self.major_tree.insert('', 'end', values=row)
+
+    def build_department_tab(self):
+        frame = self.dept_tab
+
+        ttk.Label(frame, text="Department Name").grid(row=0, column=0)
+        self.dept_name = ttk.Entry(frame)
+        self.dept_name.grid(row=0, column=1)
+
+        ttk.Button(frame, text="Add Department", command=self.add_department).grid(row=1, column=0, columnspan=2)
+        self.dept_tree = self.create_treeview(frame, ["ID", "Name"], 2)
+        self.refresh_departments()
+
+    def add_department(self):
+        name = self.dept_name.get()
+        if name:
+            try:
+                run_query("INSERT INTO Departments (Name) VALUES (?)", (name,))
+                self.refresh_departments()
+                messagebox.showinfo("Success", "Department added!")
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
+
+    def refresh_departments(self):
+        for i in self.dept_tree.get_children():
+            self.dept_tree.delete(i)
+        rows = run_query("SELECT * FROM Departments").fetchall()
+        for row in rows:
+            self.dept_tree.insert('', 'end', values=row)
+
+    def create_treeview(self, parent, columns, row):
+        tree = ttk.Treeview(parent, columns=columns, show='headings', height=10)
+        for col in columns:
+            tree.heading(col, text=col)
+            tree.column(col, width=100)
+        tree.grid(row=row, column=0, columnspan=2, pady=10)
+        return tree
 
 
-# ---------------- MAJOR FUNCTIONS ----------------
-
-# Add a new major to the Majors table
-def add_major(name):
-    with sqlite3.connect('student_info.db') as conn:
-        conn.execute("INSERT INTO Majors (Name) VALUES (?)", (name,))
-        print("Major added.")
-
-# Search for a major by its ID
-def search_major(major_id):
-    with sqlite3.connect('student_info.db') as conn:
-        result = conn.execute("SELECT * FROM Majors WHERE MajorID = ?", (major_id,)).fetchone()
-        print("Result:", result)
-
-# Update the name of an existing major by its ID
-def update_major(major_id, new_name):
-    with sqlite3.connect('student_info.db') as conn:
-        conn.execute("UPDATE Majors SET Name = ? WHERE MajorID = ?", (new_name, major_id))
-        print("Major updated.")
-
-# Delete a major by its ID
-def delete_major(major_id):
-    with sqlite3.connect('student_info.db') as conn:
-        conn.execute("DELETE FROM Majors WHERE MajorID = ?", (major_id,))
-        print("Major deleted.")
-
-# List all majors in the table
-def list_majors():
-    with sqlite3.connect('student_info.db') as conn:
-        results = conn.execute("SELECT * FROM Majors").fetchall()
-        for row in results:
-            print(row)
-
-
-# ---------------- DEPARTMENT FUNCTIONS ----------------
-
-# Add a new department to the Departments table
-def add_department(name):
-    with sqlite3.connect('student_info.db') as conn:
-        conn.execute("INSERT INTO Departments (Name) VALUES (?)", (name,))
-        print("Department added.")
-
-# Search for a department by its ID
-def search_department(dept_id):
-    with sqlite3.connect('student_info.db') as conn:
-        result = conn.execute("SELECT * FROM Departments WHERE DeptID = ?", (dept_id,)).fetchone()
-        print("Result:", result)
-
-# Update the name of an existing department by its ID
-def update_department(dept_id, new_name):
-    with sqlite3.connect('student_info.db') as conn:
-        conn.execute("UPDATE Departments SET Name = ? WHERE DeptID = ?", (new_name, dept_id))
-        print("Department updated.")
-
-# Delete a department by its ID
-def delete_department(dept_id):
-    with sqlite3.connect('student_info.db') as conn:
-        conn.execute("DELETE FROM Departments WHERE DeptID = ?", (dept_id,))
-        print("Department deleted.")
-
-# List all departments in the table
-def list_departments():
-    with sqlite3.connect('student_info.db') as conn:
-        results = conn.execute("SELECT * FROM Departments").fetchall()
-        for row in results:
-            print(row)
-
-
-# ---------------- STUDENT FUNCTIONS ----------------
-
-# Add a new student, ensuring valid major and department IDs are used
-def add_student(name, major_id, dept_id):
-    with sqlite3.connect('student_info.db') as conn:
-        conn.execute("PRAGMA foreign_keys = ON")  # Ensure foreign key constraints are enforced
-        conn.execute("INSERT INTO Students (Name, MajorID, DeptID) VALUES (?, ?, ?)", (name, major_id, dept_id))
-        print("Student added.")
-
-# Search for a student by their ID
-def search_student(student_id):
-    with sqlite3.connect('student_info.db') as conn:
-        result = conn.execute("SELECT * FROM Students WHERE StudentID = ?", (student_id,)).fetchone()
-        print("Result:", result)
-
-# Update a student's information
-def update_student(student_id, new_name, new_major_id, new_dept_id):
-    with sqlite3.connect('student_info.db') as conn:
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("UPDATE Students SET Name = ?, MajorID = ?, DeptID = ? WHERE StudentID = ?",
-                     (new_name, new_major_id, new_dept_id, student_id))
-        print("Student updated.")
-
-# Delete a student by their ID
-def delete_student(student_id):
-    with sqlite3.connect('student_info.db') as conn:
-        conn.execute("DELETE FROM Students WHERE StudentID = ?", (student_id,))
-        print("Student deleted.")
-
-# List all students in the table
-def list_students():
-    with sqlite3.connect('student_info.db') as conn:
-        results = conn.execute("SELECT * FROM Students").fetchall()
-        for row in results:
-            print(row)
+if __name__ == '__main__':
+    root = tk.Tk()
+    app = StudentDatabaseApp(root)
+    root.mainloop()
