@@ -1,146 +1,123 @@
+from flask import Flask, request, redirect, render_template_string
 import sqlite3
-import tkinter as tk
-from tkinter import ttk, messagebox
+import os
 
-# ---------- Database Setup ----------
-DB_NAME = 'student_info.db'
+app = Flask(__name__)
 
-def run_query(query, params=()):
-    with sqlite3.connect(DB_NAME) as conn:
-        cursor = conn.cursor()
-        cursor.execute("PRAGMA foreign_keys = ON")
-        cursor.execute(query, params)
-        conn.commit()
-        return cursor
+# Initialize database and tables
+def init_db():
+    conn = sqlite3.connect('student_info.db')
+    conn.execute("PRAGMA foreign_keys = ON")
+    c = conn.cursor()
 
-# ---------- GUI ----------
-class StudentDatabaseApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Student Info Management System")
-        self.root.geometry("700x500")
+    # Create tables
+    c.execute('''CREATE TABLE IF NOT EXISTS Majors (
+                    MajorID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Name TEXT NOT NULL)''')
 
-        tab_control = ttk.Notebook(root)
-        self.student_tab = ttk.Frame(tab_control)
-        self.major_tab = ttk.Frame(tab_control)
-        self.dept_tab = ttk.Frame(tab_control)
+    c.execute('''CREATE TABLE IF NOT EXISTS Departments (
+                    DeptID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Name TEXT NOT NULL)''')
 
-        tab_control.add(self.student_tab, text='Students')
-        tab_control.add(self.major_tab, text='Majors')
-        tab_control.add(self.dept_tab, text='Departments')
-        tab_control.pack(expand=1, fill='both')
+    c.execute('''CREATE TABLE IF NOT EXISTS Students (
+                    StudentID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Name TEXT NOT NULL,
+                    MajorID INTEGER,
+                    DeptID INTEGER,
+                    FOREIGN KEY (MajorID) REFERENCES Majors(MajorID),
+                    FOREIGN KEY (DeptID) REFERENCES Departments(DeptID))''')
 
-        self.build_student_tab()
-        self.build_major_tab()
-        self.build_department_tab()
+    # Add sample data if empty
+    if not c.execute('SELECT 1 FROM Majors').fetchone():
+        c.execute("INSERT INTO Majors (Name) VALUES ('Computer Science'), ('Mathematics')")
+    if not c.execute('SELECT 1 FROM Departments').fetchone():
+        c.execute("INSERT INTO Departments (Name) VALUES ('STEM'), ('Arts')")
 
-    def build_student_tab(self):
-        frame = self.student_tab
+    conn.commit()
+    conn.close()
 
-        ttk.Label(frame, text="Name").grid(row=0, column=0)
-        self.student_name = ttk.Entry(frame)
-        self.student_name.grid(row=0, column=1)
+# Get connection with row access by name
+def get_db_connection():
+    conn = sqlite3.connect('student_info.db')
+    conn.row_factory = sqlite3.Row
+    return conn
 
-        ttk.Label(frame, text="MajorID").grid(row=1, column=0)
-        self.student_major = ttk.Entry(frame)
-        self.student_major.grid(row=1, column=1)
+# HTML template embedded as a string
+HTML_TEMPLATE = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Student DB</title>
+    <style>
+        body { font-family: Arial; margin: 40px; }
+        table { border-collapse: collapse; width: 60%; margin-bottom: 20px; }
+        th, td { padding: 8px 12px; border: 1px solid #ccc; }
+    </style>
+</head>
+<body>
+    <h1>Student Records</h1>
+    <table>
+        <tr><th>ID</th><th>Name</th><th>Major</th><th>Department</th></tr>
+        {% for s in students %}
+        <tr>
+            <td>{{ s.StudentID }}</td>
+            <td>{{ s.Name }}</td>
+            <td>{{ s.Major or 'N/A' }}</td>
+            <td>{{ s.Department or 'N/A' }}</td>
+        </tr>
+        {% endfor %}
+    </table>
 
-        ttk.Label(frame, text="DeptID").grid(row=2, column=0)
-        self.student_dept = ttk.Entry(frame)
-        self.student_dept.grid(row=2, column=1)
+    <h2>Add Student</h2>
+    <form method="POST" action="/add">
+        Name: <input type="text" name="name" required><br><br>
+        Major:
+        <select name="major_id">
+            {% for m in majors %}
+            <option value="{{ m.MajorID }}">{{ m.Name }}</option>
+            {% endfor %}
+        </select><br><br>
+        Department:
+        <select name="dept_id">
+            {% for d in departments %}
+            <option value="{{ d.DeptID }}">{{ d.Name }}</option>
+            {% endfor %}
+        </select><br><br>
+        <button type="submit">Add Student</button>
+    </form>
+</body>
+</html>
+'''
 
-        ttk.Button(frame, text="Add Student", command=self.add_student).grid(row=3, column=0, columnspan=2, pady=5)
-        self.student_tree = self.create_treeview(frame, ["ID", "Name", "MajorID", "DeptID"], 5)
-        self.refresh_students()
+@app.route('/')
+def index():
+    conn = get_db_connection()
+    students = conn.execute('''
+        SELECT Students.StudentID, Students.Name,
+               Majors.Name AS Major,
+               Departments.Name AS Department
+        FROM Students
+        LEFT JOIN Majors ON Students.MajorID = Majors.MajorID
+        LEFT JOIN Departments ON Students.DeptID = Departments.DeptID
+    ''').fetchall()
+    majors = conn.execute('SELECT * FROM Majors').fetchall()
+    departments = conn.execute('SELECT * FROM Departments').fetchall()
+    conn.close()
+    return render_template_string(HTML_TEMPLATE, students=students, majors=majors, departments=departments)
 
-    def add_student(self):
-        name = self.student_name.get()
-        major_id = self.student_major.get()
-        dept_id = self.student_dept.get()
-        if name and major_id and dept_id:
-            try:
-                run_query("INSERT INTO Students (Name, MajorID, DeptID) VALUES (?, ?, ?)",
-                          (name, int(major_id), int(dept_id)))
-                self.refresh_students()
-                messagebox.showinfo("Success", "Student added!")
-            except Exception as e:
-                messagebox.showerror("Error", str(e))
-        else:
-            messagebox.showwarning("Missing Data", "Please fill out all fields.")
-
-    def refresh_students(self):
-        for i in self.student_tree.get_children():
-            self.student_tree.delete(i)
-        rows = run_query("SELECT * FROM Students").fetchall()
-        for row in rows:
-            self.student_tree.insert('', 'end', values=row)
-
-    def build_major_tab(self):
-        frame = self.major_tab
-
-        ttk.Label(frame, text="Major Name").grid(row=0, column=0)
-        self.major_name = ttk.Entry(frame)
-        self.major_name.grid(row=0, column=1)
-
-        ttk.Button(frame, text="Add Major", command=self.add_major).grid(row=1, column=0, columnspan=2)
-        self.major_tree = self.create_treeview(frame, ["ID", "Name"], 2)
-        self.refresh_majors()
-
-    def add_major(self):
-        name = self.major_name.get()
-        if name:
-            try:
-                run_query("INSERT INTO Majors (Name) VALUES (?)", (name,))
-                self.refresh_majors()
-                messagebox.showinfo("Success", "Major added!")
-            except Exception as e:
-                messagebox.showerror("Error", str(e))
-
-    def refresh_majors(self):
-        for i in self.major_tree.get_children():
-            self.major_tree.delete(i)
-        rows = run_query("SELECT * FROM Majors").fetchall()
-        for row in rows:
-            self.major_tree.insert('', 'end', values=row)
-
-    def build_department_tab(self):
-        frame = self.dept_tab
-
-        ttk.Label(frame, text="Department Name").grid(row=0, column=0)
-        self.dept_name = ttk.Entry(frame)
-        self.dept_name.grid(row=0, column=1)
-
-        ttk.Button(frame, text="Add Department", command=self.add_department).grid(row=1, column=0, columnspan=2)
-        self.dept_tree = self.create_treeview(frame, ["ID", "Name"], 2)
-        self.refresh_departments()
-
-    def add_department(self):
-        name = self.dept_name.get()
-        if name:
-            try:
-                run_query("INSERT INTO Departments (Name) VALUES (?)", (name,))
-                self.refresh_departments()
-                messagebox.showinfo("Success", "Department added!")
-            except Exception as e:
-                messagebox.showerror("Error", str(e))
-
-    def refresh_departments(self):
-        for i in self.dept_tree.get_children():
-            self.dept_tree.delete(i)
-        rows = run_query("SELECT * FROM Departments").fetchall()
-        for row in rows:
-            self.dept_tree.insert('', 'end', values=row)
-
-    def create_treeview(self, parent, columns, row):
-        tree = ttk.Treeview(parent, columns=columns, show='headings', height=10)
-        for col in columns:
-            tree.heading(col, text=col)
-            tree.column(col, width=100)
-        tree.grid(row=row, column=0, columnspan=2, pady=10)
-        return tree
-
+@app.route('/add', methods=['POST'])
+def add_student():
+    name = request.form['name']
+    major_id = request.form['major_id']
+    dept_id = request.form['dept_id']
+    conn = get_db_connection()
+    conn.execute('INSERT INTO Students (Name, MajorID, DeptID) VALUES (?, ?, ?)',
+                 (name, major_id, dept_id))
+    conn.commit()
+    conn.close()
+    return redirect('/')
 
 if __name__ == '__main__':
-    root = tk.Tk()
-    app = StudentDatabaseApp(root)
-    root.mainloop()
+    if not os.path.exists('student_info.db'):
+        init_db()
+    app.run(debug=True, host='0.0.0.0', port=5000)
